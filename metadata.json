@@ -1,0 +1,5 @@
+{
+  "name": "Nursery Report Card Generator",
+  "description": "A simple, user-friendly report card system for nursery schools allowing teachers to grade and admins to generate PDF reports.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,221 @@
+import { Mark, Student, User, UserRole, ClassRoom } from '../types';
+import { MOCK_STUDENTS, INITIAL_CLASSES } from '../constants';
+
+const MARKS_KEY = 'nursery_app_marks';
+const USERS_KEY = 'nursery_app_users'; 
+const CLASSES_KEY = 'nursery_app_classes';
+const STUDENTS_KEY = 'nursery_app_students';
+const CONFIG_KEY = 'nursery_app_config';
+
+// Initialize Data
+const initStorage = () => {
+  // Init Users
+  if (!localStorage.getItem(USERS_KEY)) {
+    const initialUsers: User[] = [
+      { username: 'UMWARI', name: 'Teacher Umwari', role: UserRole.TEACHER, password: 'password' },
+      { username: 'ADMIN', name: 'School Admin', role: UserRole.ADMIN, password: 'admin' }
+    ];
+    localStorage.setItem(USERS_KEY, JSON.stringify(initialUsers));
+  }
+
+  // Init Classes
+  if (!localStorage.getItem(CLASSES_KEY)) {
+    const initialClasses: ClassRoom[] = INITIAL_CLASSES.map(name => ({
+      id: name.toLowerCase().replace(/\s/g, '-'),
+      name: name,
+      teacherUsername: name === 'Nursery 1' ? 'UMWARI' : undefined // Default assignment
+    }));
+    localStorage.setItem(CLASSES_KEY, JSON.stringify(initialClasses));
+  }
+
+  // Init Students
+  if (!localStorage.getItem(STUDENTS_KEY)) {
+    localStorage.setItem(STUDENTS_KEY, JSON.stringify(MOCK_STUDENTS));
+  }
+
+  // Init Marks
+  if (!localStorage.getItem(MARKS_KEY)) {
+    localStorage.setItem(MARKS_KEY, JSON.stringify([]));
+  }
+};
+
+initStorage();
+
+// --- CONFIG (LOGO) ---
+export const getSchoolLogo = (): string => {
+  const config = localStorage.getItem(CONFIG_KEY);
+  return config ? JSON.parse(config).logoUrl || '' : '';
+};
+
+export const saveSchoolLogo = (logoUrl: string) => {
+  const config = localStorage.getItem(CONFIG_KEY);
+  const newConfig = config ? { ...JSON.parse(config), logoUrl } : { logoUrl };
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
+};
+
+// --- USERS ---
+export const getUsers = (): User[] => {
+  const stored = localStorage.getItem(USERS_KEY);
+  return stored ? JSON.parse(stored) : [];
+};
+
+export const saveUser = (user: User) => {
+  const users = getUsers();
+  if (users.find(u => u.username === user.username)) return; // Prevent duplicates
+  users.push(user);
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+};
+
+export const updateUser = (currentUsername: string, data: { name?: string, username?: string, password?: string }): { success: boolean, error?: string, user?: User } => {
+  const users = getUsers();
+  const idx = users.findIndex(u => u.username === currentUsername);
+  
+  if (idx === -1) return { success: false, error: 'User not found' };
+
+  const currentUser = users[idx];
+  
+  // Check username uniqueness if changing
+  if (data.username && data.username !== currentUsername) {
+    const exists = users.some(u => u.username === data.username);
+    if (exists) return { success: false, error: 'Username already taken' };
+  }
+
+  // Update User
+  const updatedUser: User = {
+    ...currentUser,
+    name: data.name || currentUser.name,
+    username: data.username || currentUser.username,
+    password: data.password || currentUser.password
+  };
+
+  users[idx] = updatedUser;
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+
+  // Cascade username update to Classes if teacher
+  if (data.username && data.username !== currentUsername && currentUser.role === UserRole.TEACHER) {
+    const classes = getClasses();
+    const updatedClasses = classes.map(c => ({
+      ...c,
+      teacherUsername: c.teacherUsername === currentUsername ? data.username : c.teacherUsername
+    }));
+    localStorage.setItem(CLASSES_KEY, JSON.stringify(updatedClasses));
+  }
+
+  return { success: true, user: updatedUser };
+};
+
+export const deleteUser = (username: string) => {
+  let users = getUsers();
+  users = users.filter(u => u.username !== username);
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+};
+
+export const authenticate = (username: string, password: string): User | null => {
+  const users = getUsers();
+  const user = users.find(u => u.username === username && u.password === password);
+  return user || null;
+};
+
+// --- CLASSES ---
+export const getClasses = (): ClassRoom[] => {
+  const stored = localStorage.getItem(CLASSES_KEY);
+  return stored ? JSON.parse(stored) : [];
+};
+
+export const saveClass = (newClass: ClassRoom) => {
+  const classes = getClasses();
+  if (classes.find(c => c.name === newClass.name)) return;
+  classes.push(newClass);
+  localStorage.setItem(CLASSES_KEY, JSON.stringify(classes));
+};
+
+export const updateClass = (updatedClass: ClassRoom) => {
+  const classes = getClasses();
+  const index = classes.findIndex(c => c.id === updatedClass.id);
+  if (index !== -1) {
+    classes[index] = updatedClass;
+    localStorage.setItem(CLASSES_KEY, JSON.stringify(classes));
+  }
+};
+
+export const deleteClass = (id: string) => {
+  let classes = getClasses();
+  classes = classes.filter(c => c.id !== id);
+  localStorage.setItem(CLASSES_KEY, JSON.stringify(classes));
+};
+
+export const getTeacherClasses = (username: string): ClassRoom[] => {
+  const classes = getClasses();
+  return classes.filter(c => c.teacherUsername === username);
+};
+
+// --- STUDENTS ---
+export const getAllStudents = (): Student[] => {
+  const stored = localStorage.getItem(STUDENTS_KEY);
+  return stored ? JSON.parse(stored) : [];
+};
+
+export const getStudentsByClass = (className: string): Student[] => {
+  return getAllStudents().filter(s => s.className === className);
+};
+
+export const getStudent = (id: string): Student | undefined => {
+  return getAllStudents().find(s => s.id === id);
+};
+
+export const saveStudent = (student: Student) => {
+  const students = getAllStudents();
+  students.push(student);
+  localStorage.setItem(STUDENTS_KEY, JSON.stringify(students));
+};
+
+export const deleteStudent = (id: string) => {
+  let students = getAllStudents();
+  students = students.filter(s => s.id !== id);
+  localStorage.setItem(STUDENTS_KEY, JSON.stringify(students));
+
+  // Also delete associated marks
+  let marks = getMarks();
+  marks = marks.filter(m => m.studentId !== id);
+  localStorage.setItem(MARKS_KEY, JSON.stringify(marks));
+};
+
+// --- MARKS ---
+export const getMarks = (): Mark[] => {
+  const stored = localStorage.getItem(MARKS_KEY);
+  return stored ? JSON.parse(stored) : [];
+};
+
+export const getStudentMarks = (studentId: string, year: string, term: string): Mark[] => {
+  const allMarks = getMarks();
+  return allMarks.filter(m => m.studentId === studentId && m.year === year && m.term === term);
+};
+
+// Batch save marks
+export const saveMarksBatch = (newMarks: Mark[]): void => {
+  let allMarks = getMarks();
+  
+  newMarks.forEach(mark => {
+    const existingIndex = allMarks.findIndex(
+      m => m.studentId === mark.studentId && 
+           m.subjectId === mark.subjectId && 
+           m.year === mark.year && 
+           m.term === mark.term
+    );
+
+    if (mark.score === -1) {
+       // Delete the mark if score is -1 (cleared)
+       if (existingIndex >= 0) {
+         allMarks.splice(existingIndex, 1);
+       }
+    } else {
+       if (existingIndex >= 0) {
+         allMarks[existingIndex] = mark;
+       } else {
+         allMarks.push(mark);
+       }
+    }
+  });
+  
+  localStorage.setItem(MARKS_KEY, JSON.stringify(allMarks));
+};
