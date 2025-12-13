@@ -19,7 +19,9 @@ import {
   updateUser,
   deleteStudent,
   deleteClass,
-  deleteUser
+  deleteUser,
+  exportDatabase,
+  importDatabase
 } from './services/storageService';
 import { generateStudentSummary } from './services/geminiService';
 import { ACADEMIC_YEARS, TERMS, SUBJECTS } from './constants';
@@ -104,7 +106,7 @@ const ProfileModal = ({
 };
 
 // LOGIN COMPONENT
-const LoginScreen = ({ onLogin }: { onLogin: (u: string, p: string) => void }) => {
+const LoginScreen = ({ onLogin }: { onLogin: (u: string, p: string) => boolean }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -115,7 +117,10 @@ const LoginScreen = ({ onLogin }: { onLogin: (u: string, p: string) => void }) =
       setError('Please fill in all fields');
       return;
     }
-    onLogin(username, password);
+    const success = onLogin(username, password);
+    if (!success) {
+      setError('Invalid username or password');
+    }
   };
 
   return (
@@ -172,6 +177,8 @@ const TeacherDashboard = ({ user }: { user: User }) => {
 
   useEffect(() => {
     const classes = getTeacherClasses(user.username);
+    // Sort classes alphabetically
+    classes.sort((a,b) => a.name.localeCompare(b.name));
     setMyClasses(classes);
     if (classes.length > 0) {
       setSelectedClass(classes[0].name);
@@ -188,6 +195,8 @@ const TeacherDashboard = ({ user }: { user: User }) => {
   }, [year, term, selectedClass, selectedSubject]);
 
   const students = selectedClass ? getStudentsByClass(selectedClass) : [];
+  // Sort students alphabetically
+  students.sort((a,b) => a.name.localeCompare(b.name));
 
   const handleMarkChange = (studentId: string, scoreStr: string) => {
     const score = scoreStr === '' ? NaN : parseInt(scoreStr);
@@ -417,6 +426,7 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
   
   // Selection States
   const [filterClass, setFilterClass] = useState('');
+  const [studentTabFilterClass, setStudentTabFilterClass] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [generatingAI, setGeneratingAI] = useState(false);
@@ -428,15 +438,24 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   
   const [newClassName, setNewClassName] = useState('');
+  const [newClassStreams, setNewClassStreams] = useState('');
   const [newClassTeacher, setNewClassTeacher] = useState(''); 
   const [newUser, setNewUser] = useState({ username: '', name: '', password: '', role: UserRole.TEACHER });
   const [newStudent, setNewStudent] = useState({ name: '', classId: '' });
 
   // Load data helper
   const loadManagementData = () => {
-    setClasses(getClasses());
+    // Sort classes alphabetically for better UX
+    const cls = getClasses();
+    cls.sort((a,b) => a.name.localeCompare(b.name));
+    setClasses(cls);
+    
     setUsers(getUsers());
-    setAllStudents(getAllStudents());
+    
+    // Sort students
+    const stds = getAllStudents();
+    stds.sort((a,b) => a.name.localeCompare(b.name));
+    setAllStudents(stds);
   };
 
   useEffect(() => {
@@ -593,9 +612,11 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64 = reader.result as string;
-        saveSchoolLogo(base64);
-        onLogoUpdate(base64);
+        const result = reader.result;
+        if (typeof result === 'string') {
+          saveSchoolLogo(result);
+          onLogoUpdate(result);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -604,12 +625,35 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
   // --- MANAGEMENT LOGIC ---
   const handleCreateClass = () => {
     if (!newClassName) return;
-    saveClass({
-      id: newClassName.toLowerCase().replace(/\s/g, '-'),
-      name: newClassName,
-      teacherUsername: newClassTeacher || undefined
-    });
+    
+    // Parse streams: "A,B,C" -> ["A", "B", "C"]
+    const streams = newClassStreams.split(',').map(s => s.trim()).filter(s => s);
+    
+    if (streams.length > 0) {
+        // Create multiple classes
+        streams.forEach(stream => {
+           const fullName = `${newClassName} ${stream}`;
+           const id = fullName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+           saveClass({
+               id, 
+               name: fullName, 
+               teacherUsername: newClassTeacher || undefined
+           });
+        });
+        alert(`Created ${streams.length} classes: ${streams.map(s => `${newClassName} ${s}`).join(', ')}`);
+    } else {
+        // Create single class
+        const id = newClassName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        saveClass({
+          id: id,
+          name: newClassName,
+          teacherUsername: newClassTeacher || undefined
+        });
+        alert(`Created class: ${newClassName}`);
+    }
+
     setNewClassName('');
+    setNewClassStreams('');
     setNewClassTeacher('');
     loadManagementData();
   };
@@ -662,6 +706,38 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
     if (confirm('Are you sure you want to delete this user?')) {
       deleteUser(username);
       loadManagementData();
+    }
+  };
+
+  const handleBackup = () => {
+    const json = exportDatabase();
+    const blob = new Blob([json], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = `nursery_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const json = event.target?.result as string;
+        if (json) {
+           const success = importDatabase(json);
+           if (success) {
+             alert('Database restored successfully! The page will reload.');
+             window.location.reload();
+           } else {
+             alert('Failed to restore database. Invalid file.');
+           }
+        }
+      };
+      reader.readAsText(file);
     }
   };
 
@@ -726,6 +802,10 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
 
   const filteredStudents = allStudents.filter(s => 
      !filterClass || s.className === classes.find(c => c.id === filterClass)?.name
+  );
+
+  const studentsTabList = allStudents.filter(s => 
+     !studentTabFilterClass || s.className === classes.find(c => c.id === studentTabFilterClass)?.name
   );
 
   return (
@@ -855,9 +935,21 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
 
           {/* Student List */}
           <div className="bg-white rounded-xl shadow-sm border border-indigo-50">
-            <div className="p-4 border-b border-indigo-50 font-bold text-indigo-900">Registered Students</div>
+            <div className="p-4 border-b border-indigo-50 flex items-center justify-between">
+              <div className="font-bold text-indigo-900">Registered Students</div>
+              <div>
+                 <select 
+                    value={studentTabFilterClass} 
+                    onChange={e => setStudentTabFilterClass(e.target.value)} 
+                    className="p-1 border rounded-lg text-sm bg-white border-slate-200"
+                 >
+                    <option value="">All Classes</option>
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                 </select>
+              </div>
+            </div>
             <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-              {allStudents.map(student => (
+              {studentsTabList.map(student => (
                 <div key={student.id} className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                      <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
@@ -876,6 +968,9 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
                   </div>
                 </div>
               ))}
+              {studentsTabList.length === 0 && (
+                <div className="p-8 text-center text-slate-400">No students found for this selection.</div>
+              )}
             </div>
           </div>
         </div>
@@ -884,6 +979,34 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
       {activeTab === 'management' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
+          {/* Database Management */}
+          <div className="col-span-1 md:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-indigo-50 space-y-4">
+             <h3 className="text-lg font-bold text-indigo-900 border-b pb-2">Database Management</h3>
+             <div className="flex flex-col md:flex-row gap-6">
+                <div className="flex-1 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                  <h4 className="font-bold text-indigo-800 mb-2">Backup Data</h4>
+                  <p className="text-sm text-slate-600 mb-4">Download a copy of all students, classes, marks, and settings to your computer.</p>
+                  <Button onClick={handleBackup}>⬇️ Download Backup</Button>
+                </div>
+                <div className="flex-1 p-4 bg-orange-50 rounded-lg border border-orange-100">
+                  <h4 className="font-bold text-orange-800 mb-2">Restore Data</h4>
+                  <p className="text-sm text-slate-600 mb-4">Restore data from a previously saved backup file. <br/><span className="font-bold text-red-500">Warning: This overwrites current data!</span></p>
+                  <input 
+                    type="file" 
+                    accept=".json"
+                    onChange={handleRestore}
+                    className="block w-full text-sm text-slate-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-orange-100 file:text-orange-700
+                      hover:file:bg-orange-200
+                    "
+                  />
+                </div>
+             </div>
+          </div>
+
           {/* School Configuration */}
           <div className="col-span-1 md:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-indigo-50 space-y-4">
              <h3 className="text-lg font-bold text-indigo-900 border-b pb-2">School Configuration</h3>
@@ -915,50 +1038,84 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
             
             <div className="flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
                <label className="text-xs font-bold text-slate-500 uppercase">Create New Class</label>
-               <div className="flex gap-2">
+               <div className="flex flex-col gap-2">
                  <input 
                    type="text" 
-                   placeholder="Class Name" 
+                   placeholder="Class Name (e.g. Nursery 1)" 
                    className="flex-1 p-2 border rounded text-sm"
                    value={newClassName}
                    onChange={(e) => setNewClassName(e.target.value)}
                  />
-                 <select
-                    className="p-2 border rounded text-sm bg-white"
-                    value={newClassTeacher}
-                    onChange={(e) => setNewClassTeacher(e.target.value)}
-                 >
-                    <option value="">-- Assign Teacher --</option>
-                    {users.filter(u => u.role === UserRole.TEACHER).map(u => (
-                       <option key={u.username} value={u.username}>{u.name}</option>
-                    ))}
-                 </select>
-                 <Button size="sm" onClick={handleCreateClass} disabled={!newClassName}>Add</Button>
+                 <input 
+                   type="text" 
+                   placeholder="Streams (optional, comma separated e.g. A, B, C)" 
+                   className="flex-1 p-2 border rounded text-sm"
+                   value={newClassStreams}
+                   onChange={(e) => setNewClassStreams(e.target.value)}
+                 />
+                 <div className="flex gap-2">
+                    <select
+                        className="flex-1 p-2 border rounded text-sm bg-white"
+                        value={newClassTeacher}
+                        onChange={(e) => setNewClassTeacher(e.target.value)}
+                    >
+                        <option value="">-- Assign Teacher (Optional) --</option>
+                        {users.filter(u => u.role === UserRole.TEACHER).map(u => (
+                        <option key={u.username} value={u.username}>{u.name}</option>
+                        ))}
+                    </select>
+                    <Button size="sm" onClick={handleCreateClass} disabled={!newClassName}>Add</Button>
+                 </div>
                </div>
+               <p className="text-[10px] text-slate-400 italic">Enter streams like 'A, B' to create 'Nursery 1 A' and 'Nursery 1 B' automatically.</p>
             </div>
 
             <div className="space-y-3">
-              {classes.map(cls => (
-                <div key={cls.id} className="p-3 bg-slate-50 rounded border border-slate-100 flex flex-col gap-2">
-                   <div className="flex justify-between items-center font-bold text-slate-700">
-                      <span>{cls.name}</span>
-                      <Button size="sm" variant="danger" onClick={() => handleDeleteClass(cls.id)}>🗑️</Button>
-                   </div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-xs text-slate-500 uppercase">Assigned Teacher:</span>
-                     <select 
-                       className="text-sm p-1 border rounded bg-white flex-1"
-                       value={cls.teacherUsername || ''}
-                       onChange={(e) => handleAssignTeacher(cls.id, e.target.value)}
-                     >
-                       <option value="">-- Unassigned --</option>
-                       {users.filter(u => u.role === UserRole.TEACHER).map(u => (
-                         <option key={u.username} value={u.username}>{u.name}</option>
-                       ))}
-                     </select>
-                   </div>
-                </div>
-              ))}
+              {classes.map(cls => {
+                const classStudents = allStudents.filter(s => s.className === cls.name);
+                return (
+                    <div key={cls.id} className="p-3 bg-slate-50 rounded border border-slate-100 flex flex-col gap-2">
+                    <div className="flex justify-between items-center font-bold text-slate-700">
+                        <span>{cls.name}</span>
+                        <Button size="sm" variant="danger" onClick={() => handleDeleteClass(cls.id)}>🗑️</Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500 uppercase">Teacher:</span>
+                        <select 
+                        className="text-sm p-1 border rounded bg-white flex-1"
+                        value={cls.teacherUsername || ''}
+                        onChange={(e) => handleAssignTeacher(cls.id, e.target.value)}
+                        >
+                        <option value="">-- Unassigned --</option>
+                        {users.filter(u => u.role === UserRole.TEACHER).map(u => (
+                            <option key={u.username} value={u.username}>{u.name}</option>
+                        ))}
+                        </select>
+                    </div>
+                    {/* View Students Toggle */}
+                    <div className="mt-1">
+                        <details className="text-xs">
+                            <summary className="cursor-pointer text-indigo-600 font-medium select-none hover:text-indigo-800">
+                                View {classStudents.length} Students
+                            </summary>
+                            <div className="mt-2 pl-2 border-l-2 border-indigo-100 max-h-32 overflow-y-auto">
+                                {classStudents.length > 0 ? (
+                                    <ul className="space-y-1">
+                                        {classStudents.map(s => (
+                                            <li key={s.id} className="text-slate-600 flex justify-between">
+                                                <span>{s.name}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <span className="text-slate-400 italic">No students assigned.</span>
+                                )}
+                            </div>
+                        </details>
+                    </div>
+                    </div>
+                );
+              })}
             </div>
           </div>
 
@@ -1017,40 +1174,37 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
   );
 };
 
-const App = () => {
+// MAIN APP COMPONENT
+const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [schoolLogo, setSchoolLogo] = useState<string>('');
+  const [logoUrl, setLogoUrl] = useState<string>('');
   const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
-    // Load config on mount
-    setSchoolLogo(getSchoolLogo());
+    setLogoUrl(getSchoolLogo());
   }, []);
 
   const handleLogin = (u: string, p: string) => {
     const authUser = authenticate(u, p);
     if (authUser) {
       setUser(authUser);
-    } else {
-      alert('Invalid username or password');
-    }
+      return true;
+    } 
+    return false;
   };
 
   const handleLogout = () => {
     setUser(null);
   };
 
-  const handleUpdateProfile = async (data: { name: string, username: string, password?: string }) => {
+  const handleProfileUpdate = async (data: { name: string, username: string, password?: string }) => {
     if (!user) return 'Not logged in';
-    
     const result = updateUser(user.username, data);
-    
     if (result.success && result.user) {
       setUser(result.user);
       return undefined;
-    } else {
-      return result.error || 'Update failed';
     }
+    return result.error;
   };
 
   if (!user) {
@@ -1062,20 +1216,21 @@ const App = () => {
       <Layout 
         user={user} 
         onLogout={handleLogout} 
-        title={user.role === UserRole.ADMIN ? 'Administration Portal' : 'My Classroom'}
+        title={user.role === UserRole.ADMIN ? 'Administration' : 'Teacher Dashboard'}
         onOpenProfile={() => setShowProfile(true)}
       >
         {user.role === UserRole.ADMIN ? (
-          <AdminDashboard logoUrl={schoolLogo} onLogoUpdate={setSchoolLogo} />
+          <AdminDashboard logoUrl={logoUrl} onLogoUpdate={setLogoUrl} />
         ) : (
           <TeacherDashboard user={user} />
         )}
       </Layout>
+      
       {showProfile && (
         <ProfileModal 
           user={user} 
           onClose={() => setShowProfile(false)} 
-          onUpdate={handleUpdateProfile}
+          onUpdate={handleProfileUpdate} 
         />
       )}
     </>

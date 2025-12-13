@@ -1,5 +1,5 @@
 import { Mark, Student, User, UserRole, ClassRoom } from '../types';
-import { MOCK_STUDENTS, INITIAL_CLASSES } from '../constants';
+import { MOCK_STUDENTS, INITIAL_CLASSES, DEFAULT_SCHOOL_LOGO } from '../constants';
 
 const MARKS_KEY = 'nursery_app_marks';
 const USERS_KEY = 'nursery_app_users'; 
@@ -23,7 +23,7 @@ const initStorage = () => {
     const initialClasses: ClassRoom[] = INITIAL_CLASSES.map(name => ({
       id: name.toLowerCase().replace(/\s/g, '-'),
       name: name,
-      teacherUsername: name === 'Nursery 1' ? 'UMWARI' : undefined // Default assignment
+      teacherUsername: name.includes('Nursery 1') ? 'UMWARI' : undefined // Default assignment
     }));
     localStorage.setItem(CLASSES_KEY, JSON.stringify(initialClasses));
   }
@@ -41,10 +41,48 @@ const initStorage = () => {
 
 initStorage();
 
+// --- DATABASE MANAGEMENT (BACKUP/RESTORE) ---
+export const exportDatabase = (): string => {
+  const data = {
+    users: getUsers(),
+    classes: getClasses(),
+    students: getAllStudents(),
+    marks: getMarks(),
+    config: localStorage.getItem(CONFIG_KEY) ? JSON.parse(localStorage.getItem(CONFIG_KEY)!) : {},
+    timestamp: new Date().toISOString(),
+    version: '1.0'
+  };
+  return JSON.stringify(data, null, 2);
+};
+
+export const importDatabase = (jsonString: string): boolean => {
+  try {
+    const data = JSON.parse(jsonString);
+    
+    // Basic validation
+    if (!data.users || !data.classes || !data.students) {
+      console.error("Invalid database file format");
+      return false;
+    }
+
+    if(data.users) localStorage.setItem(USERS_KEY, JSON.stringify(data.users));
+    if(data.classes) localStorage.setItem(CLASSES_KEY, JSON.stringify(data.classes));
+    if(data.students) localStorage.setItem(STUDENTS_KEY, JSON.stringify(data.students));
+    if(data.marks) localStorage.setItem(MARKS_KEY, JSON.stringify(data.marks));
+    if(data.config) localStorage.setItem(CONFIG_KEY, JSON.stringify(data.config));
+    
+    return true;
+  } catch (e) {
+    console.error("Database import failed:", e);
+    return false;
+  }
+};
+
 // --- CONFIG (LOGO) ---
 export const getSchoolLogo = (): string => {
   const config = localStorage.getItem(CONFIG_KEY);
-  return config ? JSON.parse(config).logoUrl || '' : '';
+  const stored = config ? JSON.parse(config).logoUrl : '';
+  return stored || DEFAULT_SCHOOL_LOGO;
 };
 
 export const saveSchoolLogo = (logoUrl: string) => {
@@ -145,8 +183,7 @@ export const deleteClass = (id: string) => {
 };
 
 export const getTeacherClasses = (username: string): ClassRoom[] => {
-  const classes = getClasses();
-  return classes.filter(c => c.teacherUsername === username);
+  return getClasses().filter(c => c.teacherUsername === username);
 };
 
 // --- STUDENTS ---
@@ -159,10 +196,6 @@ export const getStudentsByClass = (className: string): Student[] => {
   return getAllStudents().filter(s => s.className === className);
 };
 
-export const getStudent = (id: string): Student | undefined => {
-  return getAllStudents().find(s => s.id === id);
-};
-
 export const saveStudent = (student: Student) => {
   const students = getAllStudents();
   students.push(student);
@@ -173,8 +206,8 @@ export const deleteStudent = (id: string) => {
   let students = getAllStudents();
   students = students.filter(s => s.id !== id);
   localStorage.setItem(STUDENTS_KEY, JSON.stringify(students));
-
-  // Also delete associated marks
+  
+  // Also delete marks
   let marks = getMarks();
   marks = marks.filter(m => m.studentId !== id);
   localStorage.setItem(MARKS_KEY, JSON.stringify(marks));
@@ -187,35 +220,27 @@ export const getMarks = (): Mark[] => {
 };
 
 export const getStudentMarks = (studentId: string, year: string, term: string): Mark[] => {
-  const allMarks = getMarks();
-  return allMarks.filter(m => m.studentId === studentId && m.year === year && m.term === term);
+  const marks = getMarks();
+  return marks.filter(m => m.studentId === studentId && m.year === year && m.term === term);
 };
 
-// Batch save marks
-export const saveMarksBatch = (newMarks: Mark[]): void => {
-  let allMarks = getMarks();
+export const saveMarksBatch = (newMarks: Mark[]) => {
+  let marks = getMarks();
   
-  newMarks.forEach(mark => {
-    const existingIndex = allMarks.findIndex(
-      m => m.studentId === mark.studentId && 
-           m.subjectId === mark.subjectId && 
-           m.year === mark.year && 
-           m.term === mark.term
-    );
-
-    if (mark.score === -1) {
-       // Delete the mark if score is -1 (cleared)
-       if (existingIndex >= 0) {
-         allMarks.splice(existingIndex, 1);
-       }
-    } else {
-       if (existingIndex >= 0) {
-         allMarks[existingIndex] = mark;
-       } else {
-         allMarks.push(mark);
-       }
+  newMarks.forEach(nm => {
+    // Remove existing mark if any
+    marks = marks.filter(m => !(
+      m.studentId === nm.studentId && 
+      m.subjectId === nm.subjectId &&
+      m.year === nm.year &&
+      m.term === nm.term
+    ));
+    
+    // Add new mark if score is valid (not -1 which signals delete)
+    if (nm.score !== -1 && !isNaN(nm.score)) {
+      marks.push(nm);
     }
   });
-  
-  localStorage.setItem(MARKS_KEY, JSON.stringify(allMarks));
+
+  localStorage.setItem(MARKS_KEY, JSON.stringify(marks));
 };
