@@ -78,7 +78,7 @@ export const importDatabase = (jsonString: string): boolean => {
   }
 };
 
-// --- CONFIG (LOGO) ---
+// --- CONFIG (LOGO & HEADMASTER) ---
 export const getSchoolLogo = (): string => {
   const config = localStorage.getItem(CONFIG_KEY);
   const stored = config ? JSON.parse(config).logoUrl : '';
@@ -88,6 +88,17 @@ export const getSchoolLogo = (): string => {
 export const saveSchoolLogo = (logoUrl: string) => {
   const config = localStorage.getItem(CONFIG_KEY);
   const newConfig = config ? { ...JSON.parse(config), logoUrl } : { logoUrl };
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
+};
+
+export const getHeadmasterName = (): string => {
+  const config = localStorage.getItem(CONFIG_KEY);
+  return config ? JSON.parse(config).headmasterName || '' : '';
+};
+
+export const saveHeadmasterName = (headmasterName: string) => {
+  const config = localStorage.getItem(CONFIG_KEY);
+  const newConfig = config ? { ...JSON.parse(config), headmasterName } : { headmasterName };
   localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
 };
 
@@ -146,6 +157,21 @@ export const deleteUser = (username: string) => {
   let users = getUsers();
   users = users.filter(u => u.username !== username);
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
+
+  // Unassign this user from any classes they taught
+  let classes = getClasses();
+  let classesChanged = false;
+  classes = classes.map(c => {
+    if (c.teacherUsername === username) {
+      classesChanged = true;
+      return { ...c, teacherUsername: undefined };
+    }
+    return c;
+  });
+
+  if (classesChanged) {
+    localStorage.setItem(CLASSES_KEY, JSON.stringify(classes));
+  }
 };
 
 export const authenticate = (username: string, password: string): User | null => {
@@ -176,6 +202,30 @@ export const updateClass = (updatedClass: ClassRoom) => {
   }
 };
 
+export const renameClass = (classId: string, newName: string) => {
+  const classes = getClasses();
+  const cls = classes.find(c => c.id === classId);
+  if (!cls) return;
+
+  const oldName = cls.name;
+  cls.name = newName;
+  localStorage.setItem(CLASSES_KEY, JSON.stringify(classes));
+
+  // Update all students currently in this class to the new class name
+  const students = getAllStudents();
+  let studentsChanged = false;
+  students.forEach(s => {
+    if (s.className === oldName) {
+      s.className = newName;
+      studentsChanged = true;
+    }
+  });
+
+  if (studentsChanged) {
+    localStorage.setItem(STUDENTS_KEY, JSON.stringify(students));
+  }
+};
+
 export const deleteClass = (id: string) => {
   let classes = getClasses();
   classes = classes.filter(c => c.id !== id);
@@ -200,6 +250,16 @@ export const saveStudent = (student: Student) => {
   const students = getAllStudents();
   students.push(student);
   localStorage.setItem(STUDENTS_KEY, JSON.stringify(students));
+};
+
+export const updateStudent = (updatedStudent: Student) => {
+  const students = getAllStudents();
+  const index = students.findIndex(s => s.id === updatedStudent.id);
+  if (index !== -1) {
+    // Merge updates
+    students[index] = { ...students[index], ...updatedStudent };
+    localStorage.setItem(STUDENTS_KEY, JSON.stringify(students));
+  }
 };
 
 export const deleteStudent = (id: string) => {

@@ -5,10 +5,11 @@ import { getGrade } from '../constants';
 interface ReportCardProps {
   data: ReportCardData;
   logoUrl?: string;
+  headmasterName?: string;
 }
 
-export const ReportCard: React.FC<ReportCardProps> = ({ data, logoUrl }) => {
-  const { student, marks, year } = data;
+export const ReportCard: React.FC<ReportCardProps> = ({ data, logoUrl, headmasterName }) => {
+  const { student, marks, year, term } = data;
   
   // Helper to get score for a specific subject name
   const getScore = (subjectName: string) => {
@@ -32,6 +33,9 @@ export const ReportCard: React.FC<ReportCardProps> = ({ data, logoUrl }) => {
   const isPromoted = decisionText.includes('promoted');
   const isRepeat = decisionText.includes('repeat');
   // 'Promoted elsewhere' is usually a manual decision in this context, or specific logic not yet defined.
+
+  // Extract just the number/identifier from the term string (e.g. "Term 1" -> "1")
+  const displayTerm = term.replace(/Term\s+/i, '');
   
   return (
     <div className="bg-white p-4 max-w-3xl mx-auto w-full text-black font-sans text-sm">
@@ -93,6 +97,12 @@ export const ReportCard: React.FC<ReportCardProps> = ({ data, logoUrl }) => {
               <span>Academic Year:</span>
               <span className="flex-1 border-b border-black border-dashed px-2">{year}</span>
            </div>
+
+           {/* Term Row */}
+           <div className="mt-2 text-center font-bold text-sm uppercase">
+              <span className="mr-2">Term:</span>
+              <span className="inline-block border-b border-black border-dashed px-8 min-w-[150px]">{displayTerm}</span>
+           </div>
         </div>
 
         {/* Report Title */}
@@ -146,7 +156,7 @@ export const ReportCard: React.FC<ReportCardProps> = ({ data, logoUrl }) => {
                   </div>
                   <div className="flex items-center gap-2">
                      <span className="underline">DECISION:</span>
-                     <div className="border-2 border-black px-4 py-1 bg-white">
+                     <div className="border-2 border-black px-4 py-1 bg-white min-w-[10rem] min-h-[2rem]">
                         {data.annualStats.decision}
                      </div>
                   </div>
@@ -240,7 +250,10 @@ export const ReportCard: React.FC<ReportCardProps> = ({ data, logoUrl }) => {
               <tr>
                  <td className="border border-black p-2 h-32 align-bottom" colSpan={2}>
                     <div className="flex justify-between items-end px-2">
-                       <div>HEADMASTER</div>
+                       <div className="text-left">
+                           <div className="mb-4">HEADMASTER</div>
+                           <div className="font-bold text-lg uppercase">{headmasterName}</div>
+                       </div>
                        <div className="text-right">
                           SIGNATURE<br/>AND STAMP
                        </div>

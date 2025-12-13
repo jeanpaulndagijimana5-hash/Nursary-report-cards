@@ -12,10 +12,14 @@ import {
   saveUser,
   saveClass,
   updateClass,
+  renameClass,
   getTeacherClasses,
   saveStudent,
+  updateStudent,
   getSchoolLogo,
   saveSchoolLogo,
+  getHeadmasterName,
+  saveHeadmasterName,
   updateUser,
   deleteStudent,
   deleteClass,
@@ -415,7 +419,17 @@ const TeacherDashboard = ({ user }: { user: User }) => {
 };
 
 // ADMIN DASHBOARD
-const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpdate: (url: string) => void }) => {
+const AdminDashboard = ({ 
+  logoUrl, 
+  onLogoUpdate,
+  headmasterName,
+  onHeadmasterUpdate 
+}: { 
+  logoUrl: string, 
+  onLogoUpdate: (url: string) => void,
+  headmasterName: string,
+  onHeadmasterUpdate: (name: string) => void
+}) => {
   const [activeTab, setActiveTab] = useState<'reports' | 'students' | 'management'>('reports');
   const [viewMode, setViewMode] = useState<'list' | 'report' | 'bulk_report'>('list');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -442,6 +456,15 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
   const [newClassTeacher, setNewClassTeacher] = useState(''); 
   const [newUser, setNewUser] = useState({ username: '', name: '', password: '', role: UserRole.TEACHER });
   const [newStudent, setNewStudent] = useState({ name: '', classId: '' });
+  
+  // Class Editing State
+  const [editingClassId, setEditingClassId] = useState<string | null>(null);
+  const [editingClassName, setEditingClassName] = useState('');
+
+  // Student Editing State
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [editStudentName, setEditStudentName] = useState('');
+  const [editStudentClassId, setEditStudentClassId] = useState('');
 
   // Load data helper
   const loadManagementData = () => {
@@ -527,20 +550,9 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
        const count = allYearMarks.length;
        const averageScore = count > 0 ? (totalScore / count).toFixed(1) : '0';
        
-       // Calculate Promotion
-       let decision = 'To Repeat Class';
-       const avgNum = parseFloat(averageScore);
-       
-       let nextClass = 'Next Level';
-       const cls = student.className.toLowerCase();
-       if (cls.includes('nursery 1')) nextClass = 'Nursery 2';
-       else if (cls.includes('nursery 2')) nextClass = 'Nursery 3';
-       else if (cls.includes('nursery 3')) nextClass = 'Primary 1';
-       
-       // Pass mark assumption 50%
-       if (avgNum >= 50) {
-          decision = `Promoted to ${nextClass}`;
-       }
+       // DECISION: Manual entry only. System does not calculate.
+       // Leaving empty prevents system from auto-ticking checkboxes.
+       const decision = '';
        
        annualStats = {
           totalScore,
@@ -614,12 +626,18 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
       reader.onloadend = () => {
         const result = reader.result;
         if (typeof result === 'string') {
-          saveSchoolLogo(result);
-          onLogoUpdate(result);
+          saveSchoolLogo(result as string);
+          onLogoUpdate(result as string);
         }
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleHeadmasterUpdate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    saveHeadmasterName(val);
+    onHeadmasterUpdate(val);
   };
 
   // --- MANAGEMENT LOGIC ---
@@ -657,6 +675,20 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
     setNewClassTeacher('');
     loadManagementData();
   };
+  
+  const startEditingClass = (cls: ClassRoom) => {
+    setEditingClassId(cls.id);
+    setEditingClassName(cls.name);
+  };
+  
+  const handleRenameClass = () => {
+    if (editingClassId && editingClassName) {
+       renameClass(editingClassId, editingClassName);
+       setEditingClassId(null);
+       setEditingClassName('');
+       loadManagementData();
+    }
+  };
 
   const handleCreateUser = () => {
     if (!newUser.username || !newUser.password) return;
@@ -680,6 +712,29 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
     }
   };
 
+  const startEditingStudent = (student: Student) => {
+    setEditingStudentId(student.id);
+    setEditStudentName(student.name);
+    // Find class ID based on class name since student stores className
+    const cls = classes.find(c => c.name === student.className);
+    setEditStudentClassId(cls ? cls.id : '');
+  };
+
+  const handleUpdateStudent = () => {
+    if (!editingStudentId || !editStudentName || !editStudentClassId) return;
+    
+    const cls = classes.find(c => c.id === editStudentClassId);
+    if (cls) {
+      updateStudent({
+        id: editingStudentId,
+        name: editStudentName,
+        className: cls.name
+      });
+      setEditingStudentId(null);
+      loadManagementData();
+    }
+  };
+
   const handleAssignTeacher = (classId: string, teacherUsername: string) => {
     const cls = classes.find(c => c.id === classId);
     if (cls) {
@@ -696,14 +751,25 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
   };
 
   const handleDeleteClass = (id: string) => {
-    if (confirm('Are you sure you want to delete this class?')) {
-      deleteClass(id);
-      loadManagementData();
+    // Check if class has students
+    const cls = classes.find(c => c.id === id);
+    if (!cls) return;
+    
+    const count = allStudents.filter(s => s.className === cls.name).length;
+    
+    if (count > 0) {
+      const confirmed = confirm(`Warning: This class contains ${count} students. Deleting it will leave these students assigned to a non-existent class. Are you sure?`);
+      if (!confirmed) return;
+    } else {
+      if (!confirm('Are you sure you want to delete this class?')) return;
     }
+
+    deleteClass(id);
+    loadManagementData();
   };
 
   const handleDeleteUser = (username: string) => {
-    if (confirm('Are you sure you want to delete this user?')) {
+    if (confirm('Are you sure you want to delete this user? This will unassign them from any classes they teach.')) {
       deleteUser(username);
       loadManagementData();
     }
@@ -726,9 +792,10 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        const json = event.target?.result as string;
-        if (json) {
-           const success = importDatabase(json);
+        const target = event.target as FileReader;
+        const json = target?.result;
+        if (typeof json === 'string') {
+           const success = importDatabase(json as string);
            if (success) {
              alert('Database restored successfully! The page will reload.');
              window.location.reload();
@@ -764,7 +831,7 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
         </div>
         <div className="flex justify-center bg-gray-500/10 p-4 overflow-x-auto">
           <div id="report-card-container" className="bg-white print:m-0 shadow-lg">
-            <ReportCard data={reportData} logoUrl={logoUrl} />
+            <ReportCard data={reportData} logoUrl={logoUrl} headmasterName={headmasterName} />
           </div>
         </div>
       </div>
@@ -792,7 +859,7 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
                className="bg-white shadow-lg print:shadow-none print:w-full max-w-3xl w-full"
                style={{ breakAfter: 'page' }}
              >
-               <ReportCard data={data} logoUrl={logoUrl} />
+               <ReportCard data={data} logoUrl={logoUrl} headmasterName={headmasterName} />
              </div>
           ))}
         </div>
@@ -828,7 +895,7 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
           onClick={() => setActiveTab('management')}
           className={`px-4 py-2 font-bold rounded-t-lg transition-colors ${activeTab === 'management' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-indigo-50'}`}
         >
-          Classes & Teachers
+          School Management
         </button>
       </div>
 
@@ -949,25 +1016,53 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
               </div>
             </div>
             <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-              {studentsTabList.map(student => (
-                <div key={student.id} className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                     <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
-                        {student.name.substring(0,2).toUpperCase()}
-                     </div>
-                     <div>
-                        <div className="font-bold text-slate-700">{student.name}</div>
-                        <div className="text-xs text-slate-500">{student.className}</div>
-                     </div>
+              {studentsTabList.map(student => {
+                const isEditing = editingStudentId === student.id;
+                
+                return (
+                  <div key={student.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                     {isEditing ? (
+                       <div className="flex-1 flex gap-2 items-center">
+                          <input 
+                            className="flex-1 p-2 border rounded text-sm"
+                            value={editStudentName}
+                            onChange={e => setEditStudentName(e.target.value)}
+                          />
+                          <select 
+                             className="p-2 border rounded text-sm bg-white w-48"
+                             value={editStudentClassId}
+                             onChange={e => setEditStudentClassId(e.target.value)}
+                          >
+                             {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          <Button size="sm" onClick={handleUpdateStudent}>Save</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingStudentId(null)}>Cancel</Button>
+                       </div>
+                     ) : (
+                       <>
+                        <div className="flex items-center gap-3">
+                           <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                              {student.name.substring(0,2).toUpperCase()}
+                           </div>
+                           <div>
+                              <div className="font-bold text-slate-700">{student.name}</div>
+                              <div className="text-xs text-slate-500">{student.className}</div>
+                           </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-xs text-slate-400 font-mono hidden md:block">{student.id}</div>
+                          <Button size="sm" variant="secondary" onClick={() => startEditingStudent(student)} title="Edit Student">
+                             ✏️
+                          </Button>
+                          <Button size="sm" variant="danger" onClick={() => handleDeleteStudent(student.id)} title="Delete Student">
+                            🗑️
+                          </Button>
+                        </div>
+                       </>
+                     )}
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-xs text-slate-400 font-mono">{student.id}</div>
-                    <Button size="sm" variant="danger" onClick={() => handleDeleteStudent(student.id)}>
-                      🗑️
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {studentsTabList.length === 0 && (
                 <div className="p-8 text-center text-slate-400">No students found for this selection.</div>
               )}
@@ -1029,6 +1124,18 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
                     </div>
                  </div>
                </div>
+               
+               <div className="flex-1 border-l pl-6 border-indigo-50">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Headmaster's Name</label>
+                  <input 
+                     type="text"
+                     value={headmasterName}
+                     onChange={handleHeadmasterUpdate}
+                     placeholder="e.g. Mr. John Doe"
+                     className="w-full p-2 border rounded-lg text-sm mb-1"
+                  />
+                  <p className="text-xs text-slate-400">This name will appear under the "HEADMASTER" section on reports.</p>
+               </div>
              </div>
           </div>
 
@@ -1073,46 +1180,71 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
             <div className="space-y-3">
               {classes.map(cls => {
                 const classStudents = allStudents.filter(s => s.className === cls.name);
+                const isEditing = editingClassId === cls.id;
+                
                 return (
                     <div key={cls.id} className="p-3 bg-slate-50 rounded border border-slate-100 flex flex-col gap-2">
                     <div className="flex justify-between items-center font-bold text-slate-700">
-                        <span>{cls.name}</span>
-                        <Button size="sm" variant="danger" onClick={() => handleDeleteClass(cls.id)}>🗑️</Button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500 uppercase">Teacher:</span>
-                        <select 
-                        className="text-sm p-1 border rounded bg-white flex-1"
-                        value={cls.teacherUsername || ''}
-                        onChange={(e) => handleAssignTeacher(cls.id, e.target.value)}
-                        >
-                        <option value="">-- Unassigned --</option>
-                        {users.filter(u => u.role === UserRole.TEACHER).map(u => (
-                            <option key={u.username} value={u.username}>{u.name}</option>
-                        ))}
-                        </select>
-                    </div>
-                    {/* View Students Toggle */}
-                    <div className="mt-1">
-                        <details className="text-xs">
-                            <summary className="cursor-pointer text-indigo-600 font-medium select-none hover:text-indigo-800">
-                                View {classStudents.length} Students
-                            </summary>
-                            <div className="mt-2 pl-2 border-l-2 border-indigo-100 max-h-32 overflow-y-auto">
-                                {classStudents.length > 0 ? (
-                                    <ul className="space-y-1">
-                                        {classStudents.map(s => (
-                                            <li key={s.id} className="text-slate-600 flex justify-between">
-                                                <span>{s.name}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <span className="text-slate-400 italic">No students assigned.</span>
-                                )}
+                        {isEditing ? (
+                            <div className="flex gap-2 w-full">
+                                <input 
+                                   className="flex-1 p-1 text-sm border rounded"
+                                   value={editingClassName}
+                                   onChange={e => setEditingClassName(e.target.value)}
+                                />
+                                <Button size="sm" onClick={handleRenameClass}>Save</Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEditingClassId(null)}>Cancel</Button>
                             </div>
-                        </details>
+                        ) : (
+                            <>
+                                <span>{cls.name}</span>
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="secondary" onClick={() => startEditingClass(cls)} title="Edit Class Name">✏️</Button>
+                                    <Button size="sm" variant="danger" onClick={() => handleDeleteClass(cls.id)} title="Delete Class">🗑️</Button>
+                                </div>
+                            </>
+                        )}
                     </div>
+                    
+                    {!isEditing && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500 uppercase">Teacher:</span>
+                            <select 
+                            className="text-sm p-1 border rounded bg-white flex-1"
+                            value={cls.teacherUsername || ''}
+                            onChange={(e) => handleAssignTeacher(cls.id, e.target.value)}
+                            >
+                            <option value="">-- Unassigned --</option>
+                            {users.filter(u => u.role === UserRole.TEACHER).map(u => (
+                                <option key={u.username} value={u.username}>{u.name}</option>
+                            ))}
+                            </select>
+                        </div>
+                    )}
+                    
+                    {/* View Students Toggle */}
+                    {!isEditing && (
+                        <div className="mt-1">
+                            <details className="text-xs">
+                                <summary className="cursor-pointer text-indigo-600 font-medium select-none hover:text-indigo-800">
+                                    View {classStudents.length} Students
+                                </summary>
+                                <div className="mt-2 pl-2 border-l-2 border-indigo-100 max-h-32 overflow-y-auto">
+                                    {classStudents.length > 0 ? (
+                                        <ul className="space-y-1">
+                                            {classStudents.map(s => (
+                                                <li key={s.id} className="text-slate-600 flex justify-between">
+                                                    <span>{s.name}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <span className="text-slate-400 italic">No students assigned.</span>
+                                    )}
+                                </div>
+                            </details>
+                        </div>
+                    )}
                     </div>
                 );
               })}
@@ -1178,10 +1310,12 @@ const AdminDashboard = ({ logoUrl, onLogoUpdate }: { logoUrl: string, onLogoUpda
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [logoUrl, setLogoUrl] = useState<string>('');
+  const [headmasterName, setHeadmasterName] = useState<string>('');
   const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
     setLogoUrl(getSchoolLogo());
+    setHeadmasterName(getHeadmasterName());
   }, []);
 
   const handleLogin = (u: string, p: string) => {
@@ -1220,7 +1354,12 @@ const App: React.FC = () => {
         onOpenProfile={() => setShowProfile(true)}
       >
         {user.role === UserRole.ADMIN ? (
-          <AdminDashboard logoUrl={logoUrl} onLogoUpdate={setLogoUrl} />
+          <AdminDashboard 
+             logoUrl={logoUrl} 
+             onLogoUpdate={setLogoUrl}
+             headmasterName={headmasterName}
+             onHeadmasterUpdate={setHeadmasterName}
+          />
         ) : (
           <TeacherDashboard user={user} />
         )}

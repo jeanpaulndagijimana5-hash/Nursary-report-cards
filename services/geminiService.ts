@@ -3,7 +3,10 @@ import { Mark, Student } from "../types";
 
 const initGemini = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.warn("Gemini API Key is missing. Please set API_KEY in your .env file or Vercel environment variables.");
+    return null;
+  }
   return new GoogleGenAI({ apiKey });
 };
 
