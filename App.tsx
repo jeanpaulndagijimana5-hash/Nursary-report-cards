@@ -6,7 +6,7 @@ import {
   getMarks, 
   saveMarksBatch, 
   getAllStudents, 
-  getStudentMarks,
+  getStudentMarks, 
   getClasses,
   getUsers,
   saveUser,
@@ -604,6 +604,12 @@ const AdminDashboard = ({
 
   const handleDownloadPDF = () => {
     if (!reportData) return;
+
+    if (typeof html2pdf === 'undefined') {
+      alert('PDF Generator is not fully loaded. Please check your internet connection and try again.');
+      return;
+    }
+
     setIsDownloading(true);
     const element = document.getElementById('report-card-container');
     const opt = {
@@ -791,11 +797,10 @@ const AdminDashboard = ({
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
-        const target = event.target as FileReader;
-        const json = target?.result;
-        if (typeof json === 'string') {
-           const success = importDatabase(json as string);
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result === 'string') {
+           const success = importDatabase(result as string);
            if (success) {
              alert('Database restored successfully! The page will reload.');
              window.location.reload();
