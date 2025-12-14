@@ -632,8 +632,8 @@ const AdminDashboard = ({
       reader.onloadend = () => {
         const result = reader.result;
         if (typeof result === 'string') {
-          saveSchoolLogo(result);
-          onLogoUpdate(result);
+          saveSchoolLogo(result as string);
+          onLogoUpdate(result as string);
         }
       };
       reader.readAsDataURL(file);
@@ -800,7 +800,7 @@ const AdminDashboard = ({
       reader.onload = () => {
         const result = reader.result;
         if (typeof result === 'string') {
-           const success = importDatabase(result);
+           const success = importDatabase(result as string);
            if (success) {
              alert('Database restored successfully! The page will reload.');
              window.location.reload();
