@@ -1,13 +1,14 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Mark, Student } from "../types";
 
+// Using process.env.API_KEY directly as per guidelines
 const initGemini = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.warn("Gemini API Key is missing. Please set API_KEY in your .env file or Vercel environment variables.");
+  if (!process.env.API_KEY) {
+    console.warn("Gemini API Key is missing.");
     return null;
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export const generateStudentSummary = async (
@@ -16,35 +17,21 @@ export const generateStudentSummary = async (
   term: string
 ): Promise<string> => {
   const ai = initGemini();
-  if (!ai) {
-    return "AI Summary unavailable (Missing API Key).";
-  }
+  if (!ai) return "AI Summary unavailable.";
 
-  const performanceDescription = marks.map(
-    m => `${m.subjectName}: ${m.score}`
-  ).join(", ");
-
-  const prompt = `
-    You are a kind, encouraging nursery school teacher.
-    Write a short (2-3 sentences), warm, and personalized term summary for a report card.
-    Student Name: ${student.name}
-    Term: ${term}
-    Performance Data: ${performanceDescription}
-
-    Highlight their strengths based on the high scores.
-    If scores are low, suggest improvement in a very gentle, supportive way.
-    Do not list the scores in the text, just synthesize the feedback.
-    Tone: Professional yet affectionate, suitable for parents of a 4-5 year old.
-  `;
+  const performanceDescription = marks.map(m => `${m.subjectName} (${m.term}): ${m.score}`).join(", ");
+  // Using gemini-3-flash-preview for basic text summarization task
+  const prompt = `Write a short, warm nursery school term summary for ${student.name} for ${term}. Performance: ${performanceDescription}. Tone: Encouraging and professional.`;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Accessing .text as a property as per guidelines
     return response.text || "No summary generated.";
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    return "Could not generate summary at this time.";
+    console.error("Gemini Error:", error);
+    return "Could not generate summary.";
   }
 };

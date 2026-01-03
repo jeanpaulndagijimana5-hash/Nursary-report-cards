@@ -1,3 +1,4 @@
+
 export enum UserRole {
   TEACHER = 'TEACHER',
   ADMIN = 'ADMIN'
@@ -7,6 +8,7 @@ export interface User {
   username: string;
   role: UserRole;
   name: string;
+  email?: string;
   password?: string; // Only for internal storage simulation
 }
 
@@ -55,4 +57,18 @@ export interface ReportCardData {
     averageScore: string;
     decision: string;
   };
+}
+
+export interface SchoolRegistration {
+  schoolName: string;
+  district: string;
+  sector: string;
+  phone: string;
+  address: string;
+  adminName: string;
+  adminEmail: string;
+  adminPassword?: string;
+  plan: 'term' | 'year';
+  paymentScreenshot?: string;
+  status: 'pending' | 'approved' | 'rejected';
 }

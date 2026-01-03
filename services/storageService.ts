@@ -1,4 +1,5 @@
-import { Mark, Student, User, UserRole, ClassRoom } from '../types';
+
+import { Mark, Student, User, UserRole, ClassRoom, SchoolRegistration } from '../types';
 import { MOCK_STUDENTS, INITIAL_CLASSES, DEFAULT_SCHOOL_LOGO } from '../constants';
 
 const MARKS_KEY = 'nursery_app_marks';
@@ -6,6 +7,7 @@ const USERS_KEY = 'nursery_app_users';
 const CLASSES_KEY = 'nursery_app_classes';
 const STUDENTS_KEY = 'nursery_app_students';
 const CONFIG_KEY = 'nursery_app_config';
+const REGISTRATION_KEY = 'nursery_app_registration';
 
 // Initialize Data
 const initStorage = () => {
@@ -40,6 +42,39 @@ const initStorage = () => {
 };
 
 initStorage();
+
+// --- REGISTRATION MANAGEMENT ---
+export const getRegistration = (): SchoolRegistration | null => {
+  const stored = localStorage.getItem(REGISTRATION_KEY);
+  return stored ? JSON.parse(stored) : null;
+};
+
+export const saveRegistration = (reg: SchoolRegistration) => {
+  localStorage.setItem(REGISTRATION_KEY, JSON.stringify(reg));
+  
+  // If we are saving a registration, we should also initialize school config
+  const currentConfig = getSchoolConfig();
+  saveSchoolConfig({
+    ...currentConfig,
+    headmasterName: reg.adminName,
+    district: reg.district,
+    sector: reg.sector,
+    phone: reg.phone,
+    motto: '' // Default blank
+  });
+
+  // Create admin user based on registration
+  const users = getUsers();
+  const adminExists = users.find(u => u.username === reg.adminEmail || u.role === UserRole.ADMIN);
+  if (!adminExists) {
+    saveUser({
+      username: reg.adminEmail,
+      name: reg.adminName,
+      role: UserRole.ADMIN,
+      password: reg.adminPassword
+    });
+  }
+};
 
 // --- DATABASE MANAGEMENT (BACKUP/RESTORE) ---
 export const exportDatabase = (): string => {
@@ -78,7 +113,7 @@ export const importDatabase = (jsonString: string): boolean => {
   }
 };
 
-// --- CONFIG (LOGO & HEADMASTER) ---
+// --- CONFIG (LOGO & SCHOOL INFO) ---
 export const getSchoolLogo = (): string => {
   const config = localStorage.getItem(CONFIG_KEY);
   const stored = config ? JSON.parse(config).logoUrl : '';
@@ -91,14 +126,23 @@ export const saveSchoolLogo = (logoUrl: string) => {
   localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
 };
 
-export const getHeadmasterName = (): string => {
+export const getSchoolConfig = () => {
   const config = localStorage.getItem(CONFIG_KEY);
-  return config ? JSON.parse(config).headmasterName || '' : '';
+  const defaults = {
+    headmasterName: '',
+    district: '',
+    sector: '',
+    cell: '',
+    phone: '',
+    motto: ''
+  };
+  return config ? { ...defaults, ...JSON.parse(config) } : defaults;
 };
 
-export const saveHeadmasterName = (headmasterName: string) => {
+export const saveSchoolConfig = (data: { headmasterName?: string, district?: string, sector?: string, cell?: string, phone?: string, motto?: string }) => {
   const config = localStorage.getItem(CONFIG_KEY);
-  const newConfig = config ? { ...JSON.parse(config), headmasterName } : { headmasterName };
+  const current = config ? JSON.parse(config) : {};
+  const newConfig = { ...current, ...data };
   localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
 };
 
