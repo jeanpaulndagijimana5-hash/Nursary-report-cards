@@ -1,7 +1,8 @@
 
 export enum UserRole {
   TEACHER = 'TEACHER',
-  ADMIN = 'ADMIN'
+  ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN'
 }
 
 export interface User {
@@ -10,6 +11,7 @@ export interface User {
   name: string;
   email?: string;
   password?: string; // Only for internal storage simulation
+  schoolId?: string; // Links admin/teacher to a specific school
 }
 
 export interface ClassRoom {
@@ -60,6 +62,7 @@ export interface ReportCardData {
 }
 
 export interface SchoolRegistration {
+  id: string;
   schoolName: string;
   district: string;
   sector: string;
@@ -71,4 +74,5 @@ export interface SchoolRegistration {
   plan: 'term' | 'year';
   paymentScreenshot?: string;
   status: 'pending' | 'approved' | 'rejected';
+  registrationDate: string;
 }

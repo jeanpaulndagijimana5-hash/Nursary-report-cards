@@ -1,8 +1,8 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { Button } from './Button';
-import { getSchoolConfig } from '../services/storageService';
+import { getSchoolConfig, getAllRegistrations } from '../services/storageService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,6 +15,21 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, title, onOpenProfile, logoUrl }) => {
   const schoolConfig = getSchoolConfig();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    const checkPending = () => {
+      if (user?.role === UserRole.SUPER_ADMIN) {
+        const regs = getAllRegistrations();
+        const count = regs.filter(r => r.status === 'pending').length;
+        setPendingCount(count);
+      }
+    };
+    checkPending();
+    // In a real app we'd use a websocket or polling. For this demo, check frequently.
+    const interval = setInterval(checkPending, 5000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-indigo-50/50">
@@ -50,9 +65,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, title,
            <div className="space-y-4">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] px-4">Navigation</h4>
               <div className="space-y-1">
-                 <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 text-indigo-600 rounded-2xl font-bold transition-all shadow-sm border border-indigo-100/50">
-                    <span className="text-xl">🏠</span>
-                    <span>Dashboard</span>
+                 <div className="flex items-center justify-between px-4 py-3 bg-indigo-50 text-indigo-600 rounded-2xl font-bold transition-all shadow-sm border border-indigo-100/50">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">🏠</span>
+                      <span>Dashboard</span>
+                    </div>
+                    {pendingCount > 0 && user?.role === UserRole.SUPER_ADMIN && (
+                      <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce shadow-lg shadow-red-200">
+                        {pendingCount}
+                      </span>
+                    )}
                  </div>
               </div>
            </div>
@@ -87,9 +109,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, title,
             <h1 className="text-4xl md:text-5xl font-black text-indigo-900 tracking-tight">{title}</h1>
             <p className="text-slate-400 font-medium mt-1">Nursery Management Dashboard &bull; {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
           </div>
-          {user?.role === UserRole.TEACHER && (
-             <div className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-100">
-               Live Grading Mode
+          {user?.role === UserRole.SUPER_ADMIN && pendingCount > 0 && (
+             <div className="flex items-center gap-3 px-6 py-3 bg-red-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-2xl shadow-red-200 animate-in fade-in slide-in-from-top duration-500">
+               <span className="flex h-3 w-3 relative">
+                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                 <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+               </span>
+               {pendingCount} Pending Payment Approval
              </div>
           )}
         </header>
